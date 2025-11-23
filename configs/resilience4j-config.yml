@@ -1,0 +1,160 @@
+# Resilience4j Configuration
+# Circuit Breaker, Retry, Timeout, and Rate Limiter Configurations
+# 
+# PROBLEM: Need separate configs for 25+ service interactions
+# Each service-to-service call needs its own circuit breaker
+# This becomes unmaintainable
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+        slowCallRateThreshold: 100
+        slowCallDurationThreshold: 2s
+        eventConsumerBufferSize: 10
+      
+      # Order Service calling Payment Service
+      paymentService:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 30  # Lower threshold for critical payment
+        slowCallRateThreshold: 50
+        slowCallDurationThreshold: 2s
+        recordExceptions:
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.HttpServerErrorException
+          - java.net.ConnectException
+      
+      # Order Service calling Menu Service
+      menuService:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        waitDurationInOpenState: 5s
+        failureRateThreshold: 50
+        slowCallRateThreshold: 100
+        slowCallDurationThreshold: 1s
+      
+      # Order Service calling User Service
+      userService:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        waitDurationInOpenState: 5s
+        failureRateThreshold: 50
+        slowCallRateThreshold: 100
+        slowCallDurationThreshold: 1s
+      
+      # Payment Service calling External Payment Gateway
+      externalPaymentGateway:
+        slidingWindowSize: 20
+        minimumNumberOfCalls: 10
+        waitDurationInOpenState: 30s
+        failureRateThreshold: 20  # Very low threshold for external service
+        slowCallRateThreshold: 30
+        slowCallDurationThreshold: 5s
+      
+      # Notification Service calling Email Service
+      emailService:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 60  # Higher threshold - notifications can fail
+        slowCallRateThreshold: 100
+        slowCallDurationThreshold: 3s
+      
+      # ... 20+ more service configurations needed ...
+      # PROBLEM: This file becomes huge and unmaintainable
+
+  retry:
+    configs:
+      default:
+        maxAttempts: 3
+        waitDuration: 100ms
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+        retryExceptions:
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.HttpServerErrorException
+          - java.net.ConnectException
+        ignoreExceptions:
+          - org.springframework.web.client.HttpClientErrorException
+      
+      paymentService:
+        maxAttempts: 3
+        waitDuration: 200ms
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+        retryExceptions:
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.client.HttpServerErrorException
+      
+      menuService:
+        maxAttempts: 2
+        waitDuration: 50ms
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 1.5
+      
+      # ... more retry configs ...
+
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 2s
+        cancelRunningFuture: true
+      
+      paymentService:
+        timeoutDuration: 5s  # Payment can take longer
+        cancelRunningFuture: true
+      
+      menuService:
+        timeoutDuration: 1s
+        cancelRunningFuture: true
+      
+      externalPaymentGateway:
+        timeoutDuration: 10s  # External services can be slow
+        cancelRunningFuture: true
+      
+      # ... more timeout configs ...
+
+  ratelimiter:
+    configs:
+      default:
+        limitForPeriod: 10
+        limitRefreshPeriod: 1s
+        timeoutDuration: 0
+        subscribeToEvents: false
+        registerHealthIndicator: false
+      
+      paymentService:
+        limitForPeriod: 5  # Limit payment calls
+        limitRefreshPeriod: 1s
+        timeoutDuration: 100ms
+      
+      # ... more rate limiter configs ...
+
+  bulkhead:
+    configs:
+      default:
+        maxConcurrentCalls: 25
+        maxWaitDuration: 0
+      
+      paymentService:
+        maxConcurrentCalls: 10  # Limit concurrent payment calls
+        maxWaitDuration: 100ms
+      
+      # ... more bulkhead configs ...
+
+# PROBLEM SUMMARY:
+# - 25+ services × 4 resilience patterns (circuit breaker, retry, timeout, rate limiter)
+# - 100+ configuration entries
+# - Difficult to maintain and tune
+# - Each service interaction needs separate config
+# - In a monolith, most of this is unnecessary (direct method calls)
+

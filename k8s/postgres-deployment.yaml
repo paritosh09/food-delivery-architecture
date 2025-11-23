@@ -1,0 +1,100 @@
+# PROBLEM: Each service has its own PostgreSQL instance
+# 25+ services = 15+ PostgreSQL databases
+# This is one example - need 15+ similar deployments
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-order
+  namespace: production
+spec:
+  serviceName: postgres-order
+  replicas: 1  # PROBLEM: Single replica = no HA, but cheaper
+  selector:
+    matchLabels:
+      app: postgres-order
+  template:
+    metadata:
+      labels:
+        app: postgres-order
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: orderdb
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-order-secrets
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-order-secrets
+              key: password
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 20Gi  # PROBLEM: 15+ databases × 20GB = 300GB+ storage
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-order
+  namespace: production
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+    protocol: TCP
+    name: postgres
+  selector:
+    app: postgres-order
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-order-secrets
+  namespace: production
+type: Opaque
+stringData:
+  username: "postgres"
+  password: "postgres"
+
+# PROBLEM: Need similar deployments for:
+# - postgres-payment
+# - postgres-menu
+# - postgres-user
+# - postgres-cart
+# - postgres-delivery
+# - postgres-rating
+# - postgres-invoice
+# - postgres-restaurant
+# - postgres-offer
+# - postgres-location
+# - ... and more
+# 
+# In a monolith: Single PostgreSQL instance with multiple schemas
+
